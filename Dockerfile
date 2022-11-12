@@ -30,8 +30,13 @@ RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/nul
 RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main' -y
 RUN apt-get install cmake pkg-config protobuf-compiler libjson-c-dev intltool libpython3-dev python3-pip -y
 
+# install opencv
+RUN apt-get install ffmpeg libsm6 libxext6  -y
+RUN pip3 install opencv-python
+
 RUN pip3 install six setuptools numpy scipy tensorflow==1.14 tensorflow-hub dm-sonnet==1.35
 RUN pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu116
+RUN pip3 install ray
 
 RUN python setup.py develop --user
 
