@@ -176,7 +176,7 @@ class A2C(nn.Module):
         h = F.relu(h)
 
         h = self.conv_encoder(h)
-        h = h.view(h.size(0), -1)
+        h = h.reshape(h.size(0), -1)
         h = F.relu(self.encoder_fc(h))
         return h
 

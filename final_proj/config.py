@@ -10,9 +10,9 @@ class SpiralConfig:
         self.n_paint_steps = 10 # 19
         self.input_shape = (64, 64)
         self.grid_shape = (32, 32)
-        self.buffer_size = 20
-        self.batch_size = 64
-        self.n_painters = self.batch_size
+        self.buffer_size = 10
+        self.batch_size = 32
+        self.n_painters = 10
         self.optimizer = "adam"
         self.checkpoint_interval = 2000
         self.weight_copy_interval = 1

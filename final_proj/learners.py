@@ -11,7 +11,7 @@ from real_image_loader import get_real_image_loader
 from policies import A2C
 from torchvision.utils import save_image
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_gpus=0.5)
 class DiscLearner:
     def __init__(self, config, checkpoint=None):
         print('discriminator using gpu: ', ray.get_gpu_ids())
@@ -130,7 +130,7 @@ class DiscLearner:
                     a2c_training_steps = ray.get(storage.get_info.remote("a2c_training_steps"))
                     time.sleep(0.2)
 
-@ray.remote(num_gpus=1)
+@ray.remote(num_gpus=0.5)
 class PolicyLearner:
     def __init__(self, config, checkpoint=None):
         print('policy using gpu: ', ray.get_gpu_ids())
