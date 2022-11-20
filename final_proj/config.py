@@ -6,13 +6,13 @@ class SpiralConfig:
     def __init__(self):
         self.seed = 0
         self.dataset = 'mnist' # 'celeba' or 'mnist'
-        self.training_steps = 1000000
+        self.training_steps = 20000
         self.n_paint_steps = 10 # 19
         self.input_shape = (64, 64)
         self.grid_shape = (32, 32)
         self.buffer_size = 10
         self.batch_size = 32
-        self.n_painters = 10
+        self.n_painters = 6
         self.optimizer = "adam"
         self.checkpoint_interval = 2000
         self.weight_copy_interval = 1
@@ -44,14 +44,14 @@ class SpiralConfig:
             "use_pressure": True,
             "use_alpha": False,
             "background": "white",
-            "brushes_basedir": 'third_party/mypaint-brushes-1.3.0/',
+            "brushes_basedir": '/spiral/third_party/mypaint-brushes-1.3.0/',
         }
         self.action_spec = self._get_action_spec()
 
 
     def _get_action_spec(self):
         import spiral.environments.libmypaint as libmypaint
-        BRUSHES_PATH = 'third_party/mypaint-brushes-1.3.0/'
+        BRUSHES_PATH = '/spiral/third_party/mypaint-brushes-1.3.0/'
         env = libmypaint.LibMyPaint(**self.libmypaint_params)
         action_spec = env.action_spec()
         del env

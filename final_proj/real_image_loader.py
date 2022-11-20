@@ -14,9 +14,9 @@ class RealImageDataset(Dataset):
         self.batch_size = batch_size
         if dataset == 'mnist':
             # self.image_paths = list(Path('../datasets/mnist_png/').resolve().glob('*/*/*.png'))
-            self.image_paths = list(Path('../datasets/mnist_png/').resolve().glob('*/4/*.png'))
+            self.image_paths = list(Path('datasets/mnist_png/').resolve().glob('*/4/*.png'))
         elif dataset == 'celeba':
-            self.image_paths = list(Path('../datasets/celeba_hq/').resolve().glob('*/*/*.jpg'))
+            self.image_paths = list(Path('datasets/celeba_hq/').resolve().glob('*/*/*.jpg'))
         else:
             assert False, 'unknown dataset'
 
