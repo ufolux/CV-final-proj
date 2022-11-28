@@ -377,7 +377,7 @@ class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
 
-        self.conv0 = nn.utils.weight_norm(nn.Conv2d(3, 16, kernel_size=5, stride=2, padding=2))
+        self.conv0 = nn.utils.weight_norm(nn.Conv2d(4, 16, kernel_size=5, stride=2, padding=2))
         self.conv1 = nn.utils.weight_norm(nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2))
         self.conv2 = nn.utils.weight_norm(nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2))
         self.conv3 = nn.utils.weight_norm(nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2))

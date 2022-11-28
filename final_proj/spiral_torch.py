@@ -139,7 +139,7 @@ def debug():
     print('success')
 
 def train():
-    ray.init(num_gpus=2)
+    ray.init(num_gpus=1)
 
     cfg = SpiralConfig()
 
