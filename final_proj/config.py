@@ -11,7 +11,7 @@ class SpiralConfig:
         self.input_shape = (64, 64)
         self.grid_shape = (32, 32)
         self.buffer_size = 20
-        self.batch_size = 128
+        self.batch_size = 64
         self.n_painters = 50
         self.optimizer = "adam"
         self.checkpoint_interval = 2000

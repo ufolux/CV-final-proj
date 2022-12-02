@@ -98,8 +98,12 @@ class DiscLearner:
         self.optimizer.zero_grad()
         gradient_penalty = self._compute_gradient_penalty(self.discriminator, gp_real_imgs.data, gp_fake_imgs.data,
                                                         gp_labels.data)
-        fake_scores = self.discriminator(fake_images, fake_labels)
-        real_scores = self.discriminator(real_images, real_labels)
+        #fake_scores = self.discriminator(fake_images, fake_labels)
+        #real_scores = self.discriminator(real_images, real_labels)
+
+        fake_scores = self.discriminator(gp_fake_imgs, gp_labels)
+        real_scores = self.discriminator(gp_real_imgs, gp_labels)
+
         d_fake = fake_scores.mean()
         d_real = real_scores.mean()
         loss = d_fake - d_real + 10*gradient_penalty
@@ -143,8 +147,9 @@ class DiscLearner:
                     "d_training_steps": self.discriminator_step,
                 }
 
-                info["d_std"] = d_std.cpu().numpy()
-                info["d_mean"] = d_mean.cpu().numpy()
+                if self.discriminator_step < 30000:  # freeze std and mean when stable
+                    info["d_std"] = d_std.cpu().numpy()
+                    info["d_mean"] = d_mean.cpu().numpy()
                 storage.set_info.remote(info)
             if self.discriminator_step % self.config.log_interval == 0:
                 storage.set_info.remote(
