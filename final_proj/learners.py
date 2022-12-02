@@ -22,7 +22,7 @@ class DiscLearner:
             self.discriminator.set_weights(checkpoint['d_weights'])
         self.discriminator.cuda()
         
-        self.optimizer = torch.optim.Adam(self.discriminator.parameters(), lr=config.d_lr, betas=(0.5, 0.999))
+        self.optimizer = torch.optim.RMSprop(self.discriminator.parameters(), lr=config.d_lr)
         if checkpoint is not None:
             self.discriminator_step = checkpoint['d_training_steps']
         else:
@@ -30,16 +30,18 @@ class DiscLearner:
         
         self.training_steps_ratio = config.training_steps_ratio
 
-        self.real_image_loader = get_real_image_loader(batch_size=config.batch_size)
+        self.real_image_loader = get_real_image_loader(dataset=config.dataset, batch_size=config.batch_size)
 
-    def _compute_gradient_penalty(self, D, real_samples, fake_samples):
+    def _compute_gradient_penalty(self, D, real_samples, fake_samples, labels):
         """Calculates the gradient penalty loss for WGAN GP"""
         # Random weight term for interpolation between real and fake samples
         alpha = torch.cuda.FloatTensor(np.random.random((real_samples.size(0), 1, 1, 1)))
+        labels = labels.long()
         # Get random interpolation between real and fake samples
         interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
-        d_interpolates = D(interpolates).squeeze().unsqueeze(1)
-        fake = Variable(torch.cuda.FloatTensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
+        d_interpolates = D(interpolates, labels).squeeze().unsqueeze(1)
+        fake= Variable(torch.cuda.FloatTensor(real_samples.shape[0], 1).fill_(1.0), requires_grad=False)
+
         # Get gradient w.r.t. interpolates
         gradients = autograd.grad(
             outputs=d_interpolates,
@@ -53,32 +55,62 @@ class DiscLearner:
         gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
         return gradient_penalty
 
-    def _wgan_update(self, fake_images):
+    def _wgan_update(self, fake_images, fake_labels):
         real_images, real_labels = next(self.real_image_loader)
+
         real_sample = real_images[0].numpy()
-        real_sample_label = real_labels[0].numpy
         real_images = real_images.cuda().float()
+        real_labels = real_labels.cuda()
         real_images = real_images.permute(0, 3, 1, 2)
-        real_labels = real_labels.unsqueeze(1).unsqueeze(2).unsqueeze(3).repeat(1, 1, 64, 64).cuda()
-        real_images = torch.cat((real_images, real_labels/10), 1).float()
+
+        order = np.arange(10)
+        np.random.shuffle(order)
+
+        gp_real_imgs = []
+        gp_fake_imgs = []
+        gp_labels = []
+
+        for i in order:
+            real_label_i = torch.where(real_labels == i, 1, 0).cpu()
+            fake_label_i = torch.where(fake_labels == i, 1, 0).cpu()
+            if torch.sum(real_label_i) == 0 or torch.sum(fake_label_i) == 0:
+                continue
+            real_label_i_index = torch.nonzero(real_label_i)
+            fake_label_i_index = torch.nonzero(fake_label_i)
+
+            for x,y in zip(real_label_i_index, fake_label_i_index):
+                gp_real_imgs.append(real_images[x])
+                gp_fake_imgs.append(fake_images[y])
+                if real_labels[x] != fake_labels[y]:
+                    print("ERROR: INDEX MISMATCH FOR GP!")
+                gp_labels.append(real_labels[x])
+
+        gp_real_imgs = torch.cat(gp_real_imgs, 0).detach().clone()
+        gp_fake_imgs = torch.cat(gp_fake_imgs, 0).detach().clone()
+        gp_labels = torch.LongTensor(gp_labels).cuda()
+
+        if gp_labels.size(0) < 20:
+            print("gp_label to small: size is {gp_labels.size(0)}")
+
+        #print(f'gp_labels  {gp_labels}')
+
 
         self.optimizer.zero_grad()
-        gradient_penalty = self._compute_gradient_penalty(self.discriminator, real_images.data, fake_images.data)
-        fake_scores = self.discriminator(fake_images)
-        real_scores = self.discriminator(real_images)
+        gradient_penalty = self._compute_gradient_penalty(self.discriminator, gp_real_imgs.data, gp_fake_imgs.data,
+                                                        gp_labels.data)
+        fake_scores = self.discriminator(fake_images, fake_labels)
+        real_scores = self.discriminator(real_images, real_labels)
         d_fake = fake_scores.mean()
         d_real = real_scores.mean()
         loss = d_fake - d_real + 10*gradient_penalty
         
         loss.backward()
+        #nn.utils.clip_grad_norm_(self.discriminator.parameters(), 0.1)
         self.optimizer.step()
-        # for p in self.discriminator.parameters():
-        #     p.data.clamp_(-0.01, 0.01)
 
         scores = torch.cat([fake_scores, real_scores], dim=0).detach()
         d_std = scores.std()
         d_mean = scores.mean()
-
         return loss, d_fake, d_real, d_std, d_mean, real_sample
 
     def learn(self, storage):
@@ -88,16 +120,19 @@ class DiscLearner:
         batch_future = storage.get_final_render_batch.remote()
 
         while not ray.get(storage.get_info.remote("terminate")):
-            # image_batch: (batch, 64, 64, 4)
-            image_batch = ray.get(batch_future)
+            # image_batch: (batch, 64, 64, 3)
+            image_batch, label_batch = ray.get(batch_future)
             batch_future = storage.get_final_render_batch.remote()
 
             image_batch = np.array(image_batch)
-            fake_sample = image_batch[0,:,:,:4]
+            label_batch = np.array(label_batch)
+            fake_sample = image_batch[0]
+            fake_label = label_batch[0]
             image_batch = torch.cuda.FloatTensor(image_batch)
+            label_batch = torch.cuda.LongTensor(label_batch)
             image_batch = image_batch.permute(0, 3, 1, 2)
 
-            loss, d_fake, d_real, d_std, d_mean, real_sample = self._wgan_update(image_batch)
+            loss, d_fake, d_real, d_std, d_mean, real_sample = self._wgan_update(image_batch, label_batch)
 
 
             self.discriminator_step += 1
@@ -107,9 +142,9 @@ class DiscLearner:
                     "d_weights": copy.deepcopy(self.discriminator.get_weights()),
                     "d_training_steps": self.discriminator_step,
                 }
-                if self.discriminator_step < 10000: # freeze std and mean when stable
-                    info["d_std"] = d_std.cpu().numpy()
-                    info["d_mean"] = d_mean.cpu().numpy()
+
+                info["d_std"] = d_std.cpu().numpy()
+                info["d_mean"] = d_mean.cpu().numpy()
                 storage.set_info.remote(info)
             if self.discriminator_step % self.config.log_interval == 0:
                 storage.set_info.remote(
@@ -150,7 +185,7 @@ class PolicyLearner:
             self.a2c.set_weights(checkpoint['a2c_weights'])
         self.a2c.cuda()
 
-        self.optimizer = torch.optim.Adam(
+        self.optimizer = torch.optim.RMSprop(
             self.a2c.parameters(),
             lr=self.config.a2c_lr,
         )
@@ -170,7 +205,7 @@ class PolicyLearner:
 
         self.n_batches_skipped = 0
 
-    def _get_rewards(self, final_renders, storage, gamma=0.99):
+    def _get_rewards(self, final_renders, label_batch, storage, gamma=0.99):
         # final_renders: (batch, 64, 64, 3)
         if self.reward_mode == 'l2':
             real_images = next(self.real_image_loader).numpy()
@@ -184,18 +219,13 @@ class PolicyLearner:
 
             with torch.no_grad():
                 final_renders_tensor = torch.FloatTensor(final_renders)
+                label_tensor = torch.tensor(label_batch)
                 final_renders_tensor = final_renders_tensor.permute(0, 3, 1, 2)
-                reward = self.discriminator(final_renders_tensor).squeeze() # (batch,)
+                reward = self.discriminator(final_renders_tensor, label_tensor).squeeze() # (batch,)
                 reward = reward.numpy()[:, np.newaxis] # (batch, 1)
                 reward = (reward - info['d_mean']) / info['d_std']
                 # reward = reward / 150
 
-        if self.config.dataset == 'mnist':
-            sparse_reward = np.sum(final_renders, axis=(1,2,3))/12288
-            sparse_reward = np.where(sparse_reward > 0.95, -3*np.ones_like(sparse_reward), np.zeros_like(sparse_reward))
-            sparse_reward = sparse_reward[:, np.newaxis]
-            reward = reward + sparse_reward
-            # reward -= 1*sparse_reward*np.abs(reward)
         return reward
 
     def _get_adv(self, R, V):
@@ -210,12 +240,13 @@ class PolicyLearner:
         batch_future = storage.get_trajectory_batch.remote()
         while self.training_step < self.config.training_steps and not ray.get(storage.get_info.remote("terminate")):
             # action_batch should be a dict, each value is (batch, time, size[i]), where i comes from LOCATION_KEYS
-            image_batch, action_batch, prev_action_batch, action_masks, value_batch, noise_samples, final_renders = ray.get(batch_future)
+            image_batch, action_batch, prev_action_batch, action_masks, value_batch, noise_samples, final_renders, label_batch = ray.get(batch_future)
             
             image_batch = np.array(image_batch)
+            label_batch = np.array(label_batch)
             # final_renders = image_batch[:, -1, :, :, :] # (batch, 64, 64, 3)
             final_renders = np.array(final_renders)
-            reward_batch = self._get_rewards(final_renders, storage) # (batch,)
+            reward_batch = self._get_rewards(final_renders, label_batch, storage) # (batch,)
             reward_mean = np.mean(reward_batch)
             
             reward_batch = np.repeat(reward_batch, image_batch.shape[1], axis=1) # (batch, time)
@@ -227,6 +258,7 @@ class PolicyLearner:
             noise_samples = np.repeat(noise_samples, image_batch.shape[1], axis=1) # (batch, time, 10)
 
             image_batch = torch.cuda.FloatTensor(image_batch)
+            label_batch = torch.cuda.LongTensor(label_batch)
             reward_batch = torch.cuda.FloatTensor(reward_batch)
             adv_batch = torch.cuda.FloatTensor(adv_batch)
             noise_samples = torch.cuda.FloatTensor(noise_samples)
@@ -250,7 +282,7 @@ class PolicyLearner:
 
                 self.optimizer.zero_grad()
                 total_loss.backward()
-                nn.utils.clip_grad_norm_(self.a2c.parameters(), 0.5)
+                #nn.utils.clip_grad_norm_(self.a2c.parameters(), 0.5)
                 self.optimizer.step()
 
                 self.training_step += 1

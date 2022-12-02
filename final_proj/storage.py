@@ -16,6 +16,7 @@ class SharedStorage:
         self.total_size = self.buffer_size * self.batch_size
         self.trajectories = [] # queue for policy learner
         self.images_rb = [None for _ in range(self.total_size)]
+        self.image_label = [None for _ in range(self.total_size)]
         self.pointer = 0
         self.image_pointer = 0
         self.images_rb_len = 0
@@ -28,11 +29,12 @@ class SharedStorage:
     def get_images(self):
         return np.array(self.images_rb)
 
-    def save_trajectory(self, trajectory, final_render):
+    def save_trajectory(self, trajectory, final_render, label):
         self.trajectories.append(trajectory)
         # self.noise_samples[self.pointer] = noise_sample
 
         self.images_rb[self.pointer] = final_render
+        self.image_label[self.pointer] = label
         # if not self.buffer_ready and self.pointer == self.batch_size-1:
         #     self.buffer_ready = True
         self.pointer = (self.pointer + 1) % self.total_size
@@ -58,6 +60,7 @@ class SharedStorage:
 
         noise_batch = [t['noise_sample'] for t in traj_batch]
         render_batch = [t['final_render'] for t in traj_batch]
+        label_batch = [t['label'] for t in traj_batch]
 
         for t in traj_batch:
             image_batch.append(np.array(t['images']))
@@ -79,7 +82,7 @@ class SharedStorage:
         # value: (batch, time)
         return np.array(image_batch), action_batch,\
             prev_action_batch, action_mask_batch,\
-            np.array(value_batch), np.array(noise_batch), np.array(render_batch)
+            np.array(value_batch), np.array(noise_batch), np.array(render_batch), np.array(label_batch)
 
     def get_final_render_batch(self):
         if self.images_rb[-1] is None: # buffer not full
@@ -87,8 +90,9 @@ class SharedStorage:
         else:
             sampled = range(self.total_size)
         sampled = sample(sampled, self.batch_size)
-        sampled = [self.images_rb[i] for i in sampled]
-        return np.array(sampled)
+        sampled_images = [self.images_rb[i] for i in sampled]
+        sampled_labels = [self.image_label[i] for i in sampled]
+        return np.array(sampled_images), np.array(sampled_labels)
 
 
     def save_checkpoint(self, savename=None):

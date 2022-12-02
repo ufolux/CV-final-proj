@@ -33,7 +33,7 @@ class Painter():
         self.noise_sample_no_label = torch.randn(1, 10)
         self.label = torch.randint(0, 10, (1,))
         self.label_onehot = F.one_hot(self.label, num_classes=10)
-        self.noise_sample = self.noise_sample_no_label + self.label_onehot
+        self.noise_sample = torch.cat((self.noise_sample_no_label, self.label_onehot), 1)
         self.state = self.a2c.initial_state()
         self.steps = 0
         self.trajectory = {
@@ -85,11 +85,8 @@ class Painter():
                 final_render = self.time_step.observation["canvas"] # final render for reward
                 if final_render.shape[2] != 3:
                     final_render = np.repeat(final_render, 3, axis=2)
-
-                label_chann = (self.label.float()/10).unsqueeze(1).unsqueeze(2).repeat(64, 64, 1).numpy()
-
-                final_render = np.concatenate((final_render, label_chann), axis=2)
                 self.trajectory['final_render'] = final_render
+                self.trajectory['label'] = self.label.item()
 
                 # for key in self.trajectory['actions']:
                 #     self.trajectory['actions'][key] = np.stack(self.trajectory['actions'][key]) # each action is (time,)
@@ -98,7 +95,7 @@ class Painter():
                 for key in self.trajectory['prev_actions']:
                     self.trajectory['prev_actions'][key] = self.trajectory['prev_actions'][key][:-1] # each action is (time,)
                     
-                storage.save_trajectory.remote(self.trajectory, final_render)
+                storage.save_trajectory.remote(self.trajectory, final_render, self.label.item())
                 storage.increment_n_games.remote()
                 self._reset_trajectory()
 

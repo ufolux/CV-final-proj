@@ -11,8 +11,8 @@ class SpiralConfig:
         self.input_shape = (64, 64)
         self.grid_shape = (32, 32)
         self.buffer_size = 20
-        self.batch_size = 64
-        self.n_painters = 10
+        self.batch_size = 128
+        self.n_painters = 50
         self.optimizer = "adam"
         self.checkpoint_interval = 2000
         self.weight_copy_interval = 1
@@ -32,7 +32,7 @@ class SpiralConfig:
         log_dir = 'train_log/run'+str(i)+'/'
         self.results_path = log_dir
 
-        self.checkpoint_path = None # "train_log/run180/model_5000.checkpoint"
+        self.checkpoint_path = None #"train_log/run3/10000.checkpoint"
 
         self.libmypaint_params = {
             "episode_length": 20,
