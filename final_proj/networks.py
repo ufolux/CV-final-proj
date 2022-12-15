@@ -75,10 +75,7 @@ class ConvEncoder(nn.Module):
         self._initializers = initializers
         self._data_format = data_format
 
-        # Note that implicitly the network uses conv strides of 2.
-        # input height / output height == factor_h.
         self._num_steps_h = factor_h.bit_length() - 1
-        # input width / output width == factor_w.
         self._num_steps_w = factor_w.bit_length() - 1
         num_steps = max(self._num_steps_h, self._num_steps_w)
         if factor_h & (factor_h - 1) != 0:
@@ -312,91 +309,32 @@ def weights_init_normal(m):
         torch.nn.init.normal_(m.weight.data, 1.0, 0.02)
         torch.nn.init.constant_(m.bias.data, 0.0)
 
-# class Discriminator(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         # Filters [256, 512, 1024]
-#         # Input_dim = channels (Cx64x64)
-#         # Output_dim = 1
-#         channels = 3
-#         self.main_module = nn.Sequential(
-#             # Image (Cx32x32)
-#             nn.Conv2d(in_channels=channels, out_channels=128, kernel_size=4, stride=2, padding=1),
-#             nn.BatchNorm2d(num_features=128),
-#             nn.LeakyReLU(0.2, inplace=True),
-
-#             nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2, padding=1),
-#             nn.BatchNorm2d(num_features=256),
-#             nn.LeakyReLU(0.2, inplace=True),
-
-#             # State (256x16x16)
-#             nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, stride=2, padding=1),
-#             nn.BatchNorm2d(num_features=512),
-#             nn.LeakyReLU(0.2, inplace=True),
-
-#             # State (512x8x8)
-#             nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=4, stride=2, padding=1),
-#             nn.BatchNorm2d(num_features=1024),
-#             nn.LeakyReLU(0.2, inplace=True)
-
-#             # # State (512x8x8)
-#             # nn.Conv2d(in_channels=512, out_channels=1024, kernel_size=1, stride=2, padding=1),
-#             # nn.BatchNorm2d(num_features=1024),
-#             # nn.LeakyReLU(0.2, inplace=True)
-#         )
-
-#         self.output = nn.Sequential(
-#             # The output of D is no longer a probability, we do not apply sigmoid at the output of D.
-#             nn.Conv2d(in_channels=1024, out_channels=1, kernel_size=4, stride=2, padding=0))
-
-#         self.apply(weights_init_normal)
-
-#     def forward(self, x):
-#         x = self.main_module(x)
-#         x = self.output(x)
-#         return x
-
-#     def feature_extraction(self, x):
-#         # Use discriminator for feature extraction then flatten to vector of 16384
-#         x = self.main_module(x)
-#         return x.view(-1, 1024*4*4)
-
-#     def save(self, path):
-#         torch.save(self.state_dict(), path)
-
-#     def load(self, path):
-#         self.load_state_dict(torch.load(path))
-
-#     def get_weights(self):
-#         return utils.dict_to_cpu(self.state_dict())
-
-#     def set_weights(self, weights):
-#         self.load_state_dict(weights)
 
 class Discriminator(nn.Module):
     def __init__(self):
         super(Discriminator, self).__init__()
 
         self.conv0 = nn.utils.weight_norm(nn.Conv2d(3, 16, kernel_size=5, stride=2, padding=2))
-        self.conv1 = nn.utils.weight_norm(nn.Conv2d(16, 32, kernel_size=5, stride=2, padding=2))
+        self.conv1 = nn.utils.weight_norm(nn.Conv2d(17, 32, kernel_size=5, stride=2, padding=2))
         self.conv2 = nn.utils.weight_norm(nn.Conv2d(32, 64, kernel_size=5, stride=2, padding=2))
         self.conv3 = nn.utils.weight_norm(nn.Conv2d(64, 128, kernel_size=5, stride=2, padding=2))
         self.conv4 = nn.utils.weight_norm(nn.Conv2d(128, 1, kernel_size=5, stride=2, padding=2))
 
-        # self.conv0 = nn.Conv2d(3, 16, 5, 2, 2)
-        # self.conv1 = nn.Conv2d(16, 32, 5, 2, 2)
-        # self.conv2 = nn.Conv2d(32, 64, 5, 2, 2)
-        # self.conv3 = nn.Conv2d(64, 128, 5, 2, 2)
-        # self.conv4 = nn.Conv2d(128, 1, 5, 2, 2)
-
+        self.lin1 = nn.utils.weight_norm(nn.Linear(10, 1024))
         self.relu0 = nn.LeakyReLU(negative_slope=0.2)
         self.relu1 = nn.LeakyReLU(negative_slope=0.2)
         self.relu2 = nn.LeakyReLU(negative_slope=0.2)
         self.relu3 = nn.LeakyReLU(negative_slope=0.2)
 
-    def forward(self, x):
+    def forward(self, x, label):
+        label = F.one_hot(label, num_classes=10).float()
+        label = self.lin1(label).reshape(-1, 1, 32, 32)
+
         x = self.conv0(x)
         x = self.relu0(x)
+
+        x = torch.cat((x, label), dim=1)
+
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.conv2(x)

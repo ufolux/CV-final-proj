@@ -1,22 +1,19 @@
-import os
 import time
-
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 
 import ray
 
 import collections
-from storage import SharedStorage
-from painter import Painter
-from learners import DiscLearner, PolicyLearner
+from network_util import SharedStorage
+from network_util import Painter
+from network_util import DiscLearner, PolicyLearner
 
 from networks import Discriminator
-from config import SpiralConfig
+from config import Config
 from policies import A2C
+
 
 def init_weights(checkpoint, cfg):
     a2c = A2C(cfg.action_spec, input_shape=cfg.input_shape, grid_shape=cfg.grid_shape, action_order="libmypaint")
@@ -28,6 +25,7 @@ def init_weights(checkpoint, cfg):
     checkpoint['d_weights'] = d_weights
     del d
     return checkpoint
+
 
 def train_loop(storage, config):
 
@@ -139,9 +137,9 @@ def debug():
     print('success')
 
 def train():
-    ray.init(num_gpus=2)
+    ray.init(num_gpus=1)
 
-    cfg = SpiralConfig()
+    cfg = Config()
 
 
     if cfg.checkpoint_path is not None:

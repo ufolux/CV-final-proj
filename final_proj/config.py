@@ -2,17 +2,17 @@ import os
 import numpy
 import torch
 
-class SpiralConfig:
+class Config:
     def __init__(self):
         self.seed = 0
         self.dataset = 'mnist' # 'celeba' or 'mnist'
         self.training_steps = 1000000
-        self.n_paint_steps = 10 # 19
+        self.n_paint_steps = 8 # 19
         self.input_shape = (64, 64)
         self.grid_shape = (32, 32)
-        self.buffer_size = 10
-        self.batch_size = 32
-        self.n_painters = 10
+        self.buffer_size = 20
+        self.batch_size = 64
+        self.n_painters = 50
         self.optimizer = "adam"
         self.checkpoint_interval = 2000
         self.weight_copy_interval = 1
@@ -22,8 +22,6 @@ class SpiralConfig:
         self.a2c_lr = 0.00005
         self.entropy_weight = 0.04
         self.value_weight = 1.0
-        # control d_steps/policy_steps ratio. Only support value < ~10. Set to None if not constrained
-        # In my case, the ratio is at ~15 unconstrained.
         self.training_steps_ratio = 5
         self.reward_mode = 'wgan' # 'l2' or 'wgan'
         i = 0
@@ -32,7 +30,7 @@ class SpiralConfig:
         log_dir = 'train_log/run'+str(i)+'/'
         self.results_path = log_dir
 
-        self.checkpoint_path = None # "train_log/run180/model_5000.checkpoint"
+        self.checkpoint_path = None
 
         self.libmypaint_params = {
             "episode_length": 20,
@@ -44,14 +42,14 @@ class SpiralConfig:
             "use_pressure": True,
             "use_alpha": False,
             "background": "white",
-            "brushes_basedir": 'third_party/mypaint-brushes-1.3.0/',
+            "brushes_basedir": '../spiral/third_party/mypaint-brushes-1.3.0/',
         }
         self.action_spec = self._get_action_spec()
 
 
     def _get_action_spec(self):
         import spiral.environments.libmypaint as libmypaint
-        BRUSHES_PATH = 'third_party/mypaint-brushes-1.3.0/'
+        BRUSHES_PATH = '../spiral/third_party/mypaint-brushes-1.3.0/'
         env = libmypaint.LibMyPaint(**self.libmypaint_params)
         action_spec = env.action_spec()
         del env

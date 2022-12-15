@@ -2,6 +2,8 @@ import collections
 import numpy as np
 import torch
 
+
+
 AgentOutput = collections.namedtuple(
     "AgentOutput", ["action", "policy_logits", "baseline"])
 AgentState = collections.namedtuple(

@@ -9,11 +9,12 @@ import utils
 
 LOCATION_KEYS = ("end", "control")
 ORDERS = {
-  "libmypaint": ["flag", "end", "control", "size", "pressure",
-                 "red", "green", "blue"],
-  "fluid": ["flag", "end", "control", "size", "speed",
-            "red", "green", "blue", "alpha"],
+    "libmypaint": ["flag", "end", "control", "size", "pressure",
+                   "red", "green", "blue"],
+    "fluid": ["flag", "end", "control", "size", "speed",
+              "red", "green", "blue", "alpha"],
 }
+
 
 def xy_grid(batch_size, width, height, cuda=False):
     x_grid = torch.linspace(-1, 1, steps=width)
@@ -25,12 +26,9 @@ def xy_grid(batch_size, width, height, cuda=False):
     if cuda:
         return x_grid.cuda(), y_grid.cuda()
     return x_grid, y_grid
-    
 
-def lstm_initial_state(batch_size, hidden_size):
-    hiddens = torch.zeros((1, batch_size, hidden_size))
-    cells = torch.zeros((1, batch_size, hidden_size))
-    return (hiddens, cells)
+
+
 
 
 class A2C(nn.Module):
@@ -40,11 +38,10 @@ class A2C(nn.Module):
 
         self._action_order = action_order
         self._action_spec = collections.OrderedDict(action_spec)
-        
 
         order = [k for k in ORDERS[action_order] if k in action_spec]
         action_fcs = {
-            k: nn.Linear(self._action_spec[k].maximum-self._action_spec[k].minimum+1, 16)
+            k: nn.Linear(self._action_spec[k].maximum - self._action_spec[k].minimum + 1, 16)
             for k in order
             if k not in LOCATION_KEYS
         }
@@ -52,8 +49,8 @@ class A2C(nn.Module):
             action_fcs[k] = nn.Linear(2, 16)
         self.action_fcs = nn.ModuleDict(action_fcs)
 
-        self.action_mlp = build_mlp(16*len(self._action_spec), [64, 32, 32])
-        self.noise_cond_mlp = build_mlp(10, [64, 32, 32])
+        self.action_mlp = build_mlp(16 * len(self._action_spec), [64, 32, 32])
+        self.noise_cond_mlp = build_mlp(15, [64, 32, 32])
 
         self._grid_height, self._grid_width = grid_shape
         input_height, input_width = input_shape
@@ -80,7 +77,10 @@ class A2C(nn.Module):
 
         self.lstm_hidden_size = 256
         self.lstm_core = nn.LSTM(input_size=256, batch_first=True, hidden_size=self.lstm_hidden_size)
-        
+
+        self.lstm_h_encode = nn.Linear(5, 256)
+        self.lstm_c_encode = nn.Linear(5, 256)
+
         self.decoder_head = AutoregressiveHeads(
             z_dim=self.lstm_hidden_size,
             embed_dim=16,
@@ -97,10 +97,17 @@ class A2C(nn.Module):
     def forward(self, obs):
         pass
 
-    def initial_state(self, batch_size=1):
+    def lstm_initial_state(self, batch_size, hidden_size, label):
+        hiddens = self.lstm_h_encode(label).unsqueeze(0)
+        cells = self.lstm_c_encode(label).unsqueeze(0)
+        return (hiddens, cells)
+
+    def initial_state(self, label, batch_size=1,):
         return utils.AgentState(
-            lstm_state=lstm_initial_state(batch_size, self.lstm_hidden_size),
-            prev_action=collections.OrderedDict([(spec, np.asarray([0 for _ in range(batch_size)], dtype=np.int32).squeeze()) for spec in self._action_spec])
+            lstm_state=self.lstm_initial_state(batch_size, self.lstm_hidden_size, label),
+            prev_action=collections.OrderedDict(
+                [(spec, np.asarray([0 for _ in range(batch_size)], dtype=np.int32).squeeze()) for spec in
+                 self._action_spec])
             # prev_action=collections.OrderedDict([(spec, torch.zeros((batch_size, ))) for spec in self._action_spec])
             # prev_action={
             #     spec: torch.zeros((batch_size, 1))
@@ -120,7 +127,7 @@ class A2C(nn.Module):
             # some ugly shape adaptations to train in batch
             if is_train:
                 a = np.array(a)
-                a = np.expand_dims(a, axis=1) # (batch*time, 1)
+                a = np.expand_dims(a, axis=1)  # (batch*time, 1)
                 a = torch.FloatTensor(a)
                 m = np.array(m)
                 m = np.expand_dims(m, axis=1)
@@ -128,7 +135,7 @@ class A2C(nn.Module):
                 a = a.cuda()
                 m = m.cuda()
             else:
-                a = np.expand_dims(a, axis=(0, 1)) # (1, 1)
+                a = np.expand_dims(a, axis=(0, 1))  # (1, 1)
                 a = torch.FloatTensor(a)
             depth = self._action_spec[k].maximum - self._action_spec[k].minimum + 1
             embed = self.action_fcs[k]
@@ -146,7 +153,7 @@ class A2C(nn.Module):
             else:
                 a_vec = F.one_hot(a.long(), depth)[:, 0, :].float()
 
-            cond = embed(a_vec) * m # (batch*time, 16) * (batch*time, 1)
+            cond = embed(a_vec) * m  # (batch*time, 16) * (batch*time, 1)
             conds.append(cond)
         cond = torch.cat(conds, dim=1)
         cond = self.action_mlp(cond)
@@ -165,7 +172,7 @@ class A2C(nn.Module):
         spatial_inputs += [x_grid, y_grid]
         data = torch.cat(spatial_inputs, dim=-1)
         data = data.permute(0, 3, 1, 2)
-        h = self.conv0(data) # (batch, 32, 64, 64)
+        h = self.conv0(data)  # (batch, 32, 64, 64)
 
         cond = self._encode_action_condition(prev_action, obs['action_mask'])
 
@@ -187,32 +194,32 @@ class A2C(nn.Module):
         # noise_samples: (batch, time, 10)
 
         batch_size, n_ts, x_h, x_w, n_c = observations.shape
-        x_grid, y_grid = xy_grid(batch_size*n_ts, x_h, x_w, cuda=True)
+        x_grid, y_grid = xy_grid(batch_size * n_ts, x_h, x_w, cuda=True)
 
-        observations = observations.view(batch_size*n_ts, x_h, x_w, n_c)
+        observations = observations.view(batch_size * n_ts, x_h, x_w, n_c)
 
         spatial_inputs = [observations, x_grid, y_grid]
         data = torch.cat(spatial_inputs, dim=-1)
         data = data.permute(0, 3, 1, 2)
-        h = self.conv0(data) # (batch*time, 32, 64, 64)
+        h = self.conv0(data)  # (batch*time, 32, 64, 64)
 
         action_masks = copy.deepcopy(action_masks)
         for k in self._action_spec:
-            prev_actions[k] = prev_actions[k].reshape((batch_size*n_ts))
+            prev_actions[k] = prev_actions[k].reshape((batch_size * n_ts))
             action_masks[k] = action_masks[k][:, :-1]
-            action_masks[k] = action_masks[k].reshape((batch_size*n_ts))
+            action_masks[k] = action_masks[k].reshape((batch_size * n_ts))
 
         cond = self._encode_action_condition(prev_actions, action_masks, is_train=True)
-        cond += self.noise_cond_mlp(noise_samples).view(batch_size*n_ts, -1)
-        cond = cond.view(batch_size*n_ts, -1, 1, 1) # (batch*time, 32, 1, 1)
+        cond += self.noise_cond_mlp(noise_samples).view(batch_size * n_ts, -1)
+        cond = cond.view(batch_size * n_ts, -1, 1, 1)  # (batch*time, 32, 1, 1)
 
         h += cond
         h = F.relu(h)
 
         self.conv_encoder.cuda()
         h = self.conv_encoder(h)
-        h = h.reshape(batch_size*n_ts, -1)
-        h = F.relu(self.encoder_fc(h)) # (batch*time, 256)
+        h = h.reshape(batch_size * n_ts, -1)
+        h = F.relu(self.encoder_fc(h))  # (batch*time, 256)
         h = h.view(batch_size, n_ts, -1)
         return h
 
@@ -225,7 +232,7 @@ class A2C(nn.Module):
 
     def PI(self, step_type, observation, prev_state):
         should_reset = step_type == environment.StepType.FIRST
-        torso_output = self._torso(observation, prev_state.prev_action, should_reset) # (batch, 256)
+        torso_output = self._torso(observation, prev_state.prev_action, should_reset)  # (batch, 256)
         torso_output = torso_output[None]
 
         lstm_state = prev_state.lstm_state
@@ -241,14 +248,16 @@ class A2C(nn.Module):
 
         return agent_output, new_state
 
-    def trajectory_forward(self, observations, prev_actions, action_masks, noise_samples):
+    def trajectory_forward(self, observations, prev_actions, action_masks, noise_samples, label):
         # torso_output: (batch, time, 256)
         torso_output = self._torso_for_train(observations, prev_actions, action_masks, noise_samples)
 
-        core_output, _ = self.lstm_core(torso_output) # batch_first is True, (batch, time, 256)
+        h_0 = self.lstm_h_encode(label).unsqueeze(0)
+        c_0 = self.lstm_c_encode(label).unsqueeze(0)
+        core_output, _ = self.lstm_core(torso_output, (h_0, c_0))  # batch_first is True, (batch, time, 256)
 
-        core_output = core_output.reshape(core_output.size(0)*core_output.size(1), -1)
-        agent_output = self._head(core_output) # access by .actions, .logits, .baseline
+        core_output = core_output.reshape(core_output.size(0) * core_output.size(1), -1)
+        agent_output = self._head(core_output)  # access by .actions, .logits, .baseline
         return agent_output
 
     def get_entropy(self, logits):  # (None, a_n)
@@ -267,13 +276,13 @@ class A2C(nn.Module):
         for key in logits:
             # logit = logits[key].view(-1, logits[key].size(-1)) # should be (batch*time, action_dim)
             logit = logits[key]
-            action = torch.LongTensor(np.array(actions[key])).view(-1) # should be (batch*time)
+            action = torch.LongTensor(np.array(actions[key])).view(-1)  # should be (batch*time)
             action = action.cuda()
             action_mask = torch.tensor(action_masks[key]).cuda()
             action_mask = action_mask[:, 1:].reshape(-1)
             neg_log_prob = nn.CrossEntropyLoss(reduction='none')(logit, action) * action_mask
-            all_neg_log_probs.append(neg_log_prob) # should be (batch*time)
-        all_neg_log_probs = torch.stack(all_neg_log_probs, dim=1).sum(dim=-1) # (batch*time)
+            all_neg_log_probs.append(neg_log_prob)  # should be (batch*time)
+        all_neg_log_probs = torch.stack(all_neg_log_probs, dim=1).sum(dim=-1)  # (batch*time)
         return all_neg_log_probs
 
     def entropy_loss(self, logits, action_masks):
@@ -283,23 +292,24 @@ class A2C(nn.Module):
             logit = logits[key]
             action_mask = torch.tensor(action_masks[key]).cuda()
             action_mask = action_mask[:, 1:].reshape(-1)
-            entropies = self.get_entropy(logit) * action_mask # (batch*time)
+            entropies = self.get_entropy(logit) * action_mask  # (batch*time)
             all_entropies.append(entropies)
-        all_entropies = torch.stack(all_entropies, dim=1).sum(dim=-1) # (batch*time)
+        all_entropies = torch.stack(all_entropies, dim=1).sum(dim=-1)  # (batch*time)
         all_entropies = all_entropies.mean()
         return all_entropies
 
-    def optimize(self, 
-        image_batch, 
-        prev_action_batch, 
-        action_batch, 
-        reward_batch, 
-        adv_batch, 
-        action_masks, 
-        noise_samples,
-        entropy_weight=0.04,
-        value_weight=1.0,
-    ):
+    def optimize(self,
+                 image_batch,
+                 prev_action_batch,
+                 action_batch,
+                 reward_batch,
+                 adv_batch,
+                 action_masks,
+                 noise_samples,
+                 label_batch,
+                 entropy_weight=0.04,
+                 value_weight=1.0,
+                 ):
         # image_batch: (batch, time, 64, 64, 3)
         # prev_action_batch: dict, each (batch, time)
         # action_batch: dict, each (batch, time)
@@ -308,9 +318,9 @@ class A2C(nn.Module):
         # action_masks: dict, each (batch, time+1)
         # noise_samples: (batch, time, 10)
 
-        agent_output = self.trajectory_forward(image_batch, prev_action_batch, action_masks, noise_samples)
-        logits = agent_output.policy_logits # a dict
-        neg_log_pi = self.neg_log_loss(logits, action_batch, action_masks) # (batch*time) tensor
+        agent_output = self.trajectory_forward(image_batch, prev_action_batch, action_masks, noise_samples, label_batch)
+        logits = agent_output.policy_logits  # a dict
+        neg_log_pi = self.neg_log_loss(logits, action_batch, action_masks)  # (batch*time) tensor
         neg_log_pi_mean = neg_log_pi.mean()
         if neg_log_pi_mean > 20:
             # skip this batch due to numerical issue caused by off-policy data
@@ -318,13 +328,13 @@ class A2C(nn.Module):
 
         adv_batch = adv_batch.view(-1)
         adv_batch = (adv_batch - adv_batch.mean()) / (adv_batch.std() + 1e-8)
-        policy_loss = (neg_log_pi * adv_batch).mean(dim=0) # scaler
+        policy_loss = (neg_log_pi * adv_batch).mean(dim=0)  # scaler
 
-        entropy = self.entropy_loss(logits, action_masks) # scaler
+        entropy = self.entropy_loss(logits, action_masks)  # scaler
 
-        values = agent_output.baseline # (batch * time)
+        values = agent_output.baseline  # (batch * time)
         reward_batch = reward_batch.view(-1)
-        value_loss = torch.square(reward_batch - values).mean() # scaler
+        value_loss = torch.square(reward_batch - values).mean()  # scaler
 
         total_loss = policy_loss + value_weight * value_loss - entropy_weight * entropy
 

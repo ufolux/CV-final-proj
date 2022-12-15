@@ -1,27 +1,32 @@
-# Docker for SPIRAL
+# CV Final Project
 
-[Docker](https://docs.docker.com/install/) is easiest way to get the
-[SPIRAL](https://github.com/deepmind/spiral) agent up and running on your machine.
-There is no need to build anything or install any packages (besides `Docker` itself).
+## Introduction
 
-## Quickstart
+We propose a method for generating animated images of numbers using generative adversarial networks and reinforcement learning. Our approach involves training a generative agent to control a simulated painting environment, with rewards provided by a discriminator network that is simultaneously trained to evaluate the authenticity of the agent's samples. By training on a dataset of images and labels, our model is able to extract the features of the images and generate Bessel curves that represent the strokes used to draw the image. The generated stroke data is then drawn frame by frame on a drawing board, resulting in an animation of the number being drawn. Our model has potential applications in creative and artistic contexts.
 
-1. [Install Docker](https://docs.docker.com/install/) on your local host machine.
-2. Run the following command in the terminal:
+## Setup Environment
 
-   ```shell
-   docker run -it -p 8888:8888 ddtm/spiral:latest
-   ```
-   
-   This will start an instance of [Jupyter Notebook](https://jupyter.org/) server. 
-   
-   Note that you can replace `8888:8888` with `<HOST_PORT>:8888` where `<HOST_PORT>`
-   is a port on your local host machine.
-3. Follow the instructions and open the URL in your host web browser: `http://127.0.0.1:8888/?token=...`
-4. You should see a file browser. Select `spiral-demo.ipynb`.
-5. **Voilà!**
+Our project depends on Deepmind implmentation of libmypaint, which is a library for simulating a drawing board. To install the library. For your convinience, we provide a Dockerfile for building a docker container which includes all the dependencies.
 
-Now you should be able to go through the **demo notebook**. Use `Shift + Enter` to execute a cell
-and go to the next one. For more information on how to use Jupyter notebooks see, for example,
-[this tutorial](https://www.codecademy.com/articles/how-to-use-jupyter-notebooks).
-# CV-final-proj
+Build the docker image and run the container:
+
+```
+cd env
+docker build -t cv_final .
+docker run --rm -it --gpus 1 cv_final
+```
+
+## How to Run Our Code
+
+1. You need to download MNIST (.png) dataset and put it in the correct directory (see details in image_loader.py).
+2. Change parameters and libmypaint path in config.py.
+3. Run main.py to train the model.
+4. Run demo.py to generate animation.
+
+## Results
+
+![1](./results/merged%201.gif)
+![2](./results/merged%202.gif)
+![3](./results/merged%203.gif)
+![4](./results/merged%204.gif)
+![5](./results/merged%205.gif)
